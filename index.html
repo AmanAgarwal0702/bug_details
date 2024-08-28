@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Static Web Application</title>
+    <style>
+        /* CSS */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background-color: #fff;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        form {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        pre {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            text-align: left;
+        }
+
+        .copy-button {
+            margin-left: 10px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+        }
+
+        .copy-button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container"> 
+        <h1>Bug Analyser</h1>
+        <form id="extractor-form">
+            <label for="searchString">Search String:</label>
+            <input type="text" id="searchString" required>
+
+            <label for="codeInput">Code Block:</label>
+            <textarea id="codeInput" rows="10" required></textarea>
+
+            <button type="submit">Extract Fields</button>
+        </form>
+
+        <div id="output"></div>
+    </div>
+
+    <script>
+        document.getElementById('extractor-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const searchString = document.getElementById('searchString').value;
+            const codeInput = document.getElementById('codeInput').value;
+            const occurrences = findBannerID(codeInput, searchString);
+
+            if (occurrences.length > 0) {
+                printSelectedFields(occurrences);
+            } else {
+                document.getElementById('output').textContent = 'No occurrences found.';
+            }
+        });
+
+        function findBannerID(content, searchString) {
+            const lowerCaseContent = content.toLowerCase();
+            const lowerCaseSearchString = searchString.toLowerCase();
+            let occurrences = [];
+            let position = lowerCaseContent.indexOf(lowerCaseSearchString);
+
+            while (position !== -1) {
+                const bannerID = extractBannerID(content, position);
+                if (bannerID) {
+                    const searchString2 = 'actionBindings';
+                    const position2 = content.indexOf(searchString2);
+                    if (position2 !== -1) {
+                        const content2 = content.substring(position2);
+                        const position3 = content2.indexOf(bannerID);
+                        if (position3 !== -1) {
+                            const Fields = extractFields(content2, position3);
+                            const foundText = extractFoundText(content, position);
+                            if (Fields) {
+                                occurrences.push({ Fields, foundText });
+                            }
+                        }
+                    }
+                }
+                position = lowerCaseContent.indexOf(lowerCaseSearchString, position + lowerCaseSearchString.length);
+            }
+
+            return occurrences;
+        }
+
+        function extractBannerID(content, position) {
+            const bannerPrefix = "Banner";
+            for (let i = position; i >= 0; i--) {
+                if (content.substring(i, i + bannerPrefix.length) === bannerPrefix) {
+                    const idStart = i + bannerPrefix.length;
+                    const idEnd = content.indexOf('_', idStart);
+                    if (idEnd !== -1) {
+                        return content.substring(idStart, idEnd);
+                    }
+                }
+            }
+            return null;
+        }
+
+        function extractFoundText(content, position) {
+            const regex = /"text"\s*:\s*{\s*"text"\s*:\s*{\s*"text"\s*:\s*"([^"]+)"/;
+            const match = content.substring(position - 500, position + 500).match(regex);
+            return match ? match[1] : "Text not found";
+        }
+
+        function extractFields(content, position) {
+            const text = '"fields": ['
+            let startPosition = content.indexOf(text, position);
+            for (let i = position; i >= 0; i--) {
+                if (content.substring(i, i + text.length) === text) {
+                    startPosition = i;
+                    break;
+                }
+            }
+            if (startPosition !== -1) {
+                let bracketCount = 0;
+                let endPosition = -1;
+                for (let i = startPosition + text.length; i < content.length; i++) {
+                    if (content[i] === '[') {
+                        bracketCount++;
+                    } else if (content[i] === ']') {
+                        if (bracketCount === 0) {
+                            endPosition = i + 1;
+                            break;
+                        } else {
+                            bracketCount--;
+                        }
+                    }
+                }
+                if (endPosition !== -1) {
+                    const fieldsString = content.substring(startPosition, endPosition);
+                    try {
+                        const fieldsObject = JSON.parse(`{${fieldsString}}`);
+                        return fieldsObject;
+                    } catch (error) {
+                        console.error("Failed to parse fields JSON:", error);
+                        return null;
+                    }
+                }
+            }
+            console.log("Fields not found or improperly formatted.");
+            return null;
+        }
+
+        function printSelectedFields(occurrences) {
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = ''; // Clear any previous content
+
+            occurrences.forEach(({ Fields, foundText }) => {
+                const table = document.createElement('table');
+                table.style.width = '100%';
+                table.setAttribute('border', '1');
+                table.style.borderCollapse = 'collapse';
+                table.style.marginTop = '20px';
+
+                const headerRow = document.createElement('tr');
+                const header = document.createElement('th');
+                header.innerText = `Text: "${foundText}"`;
+                header.setAttribute('colspan', '2');
+                header.style.padding = '10px';
+                header.style.backgroundColor = '#dcdcdc';
+                header.style.textAlign = 'center';
+                headerRow.appendChild(header);
+                table.appendChild(headerRow);
+
+                const fieldNames = [
+                    'messageUuid',
+                    'traceId',
+                    'provider',
+                    'templateId',
+                    'flowNodeId',
+                    'entityUUID',
+                    'providerMetadata'
+                ];
+
+                const headerRowField = document.createElement('tr');
+                const fieldHeader = document.createElement('th');
+                fieldHeader.innerText = 'Field';
+                fieldHeader.style.padding = '10px';
+                fieldHeader.style.backgroundColor = '#f2f2f2';
+                fieldHeader.style.textAlign = 'left';
+                headerRowField.appendChild(fieldHeader);
+
+                const valueHeader = document.createElement('th');
+                valueHeader.innerText = 'Value';
+                valueHeader.style.padding = '10px';
+                valueHeader.style.backgroundColor = '#f2f2f2';
+                valueHeader.style.textAlign = 'left';
+                headerRowField.appendChild(valueHeader);
+
+                table.appendChild(headerRowField);
+
+                fieldNames.forEach((name) => {
+                    const fieldObj = Fields.fields.find(field => field.field === name);
+
+                    if (fieldObj && fieldObj.data) {
+                        if (name === 'providerMetadata' && fieldObj.data.payload && Array.isArray(fieldObj.data.payload.fields)) {
+                            fieldObj.data.payload.fields.forEach(innerField => {
+                                appendRowToTable(table, innerField.field, extractData(innerField.data));
+                            });
+                        } else {
+                            let dataValue = extractData(fieldObj.data);
+                            if (name === 'templateId') {
+                                const prefixText = "https://bloc-plus.uberinternal.com/edit/";
+                                dataValue = createHyperlinkWithCopyButton(prefixText, dataValue);
+                            }
+                            appendRowToTable(table, name, dataValue);
+                        }
+                    } else {
+                        appendRowToTable(table, name, 'NIL');
+                    }
+                });
+
+                outputDiv.appendChild(table);
+            });
+        }
+
+        function appendRowToTable(table, fieldName, fieldValue) {
+            const row = document.createElement('tr');
+
+            const fieldCell = document.createElement('td');
+            fieldCell.style.padding = '10px';
+            fieldCell.style.borderBottom = '1px solid #ddd';
+            fieldCell.innerText = fieldName;
+            row.appendChild(fieldCell);
+
+            const valueCell = document.createElement('td');
+            valueCell.style.padding = '10px';
+            valueCell.style.borderBottom = '1px solid #ddd';
+
+            if (typeof fieldValue === 'string' || typeof fieldValue === 'number') {
+                valueCell.innerText = fieldValue;
+            } else {
+                valueCell.appendChild(fieldValue);
+            }
+
+            row.appendChild(valueCell);
+            table.appendChild(row);
+        }
+
+        function createHyperlinkWithCopyButton(prefixText, value) {
+            const container = document.createElement('div');
+
+            const link = document.createElement('a');
+            link.href = `${prefixText}${value}`;
+            link.innerText = `${value}`;
+            link.target = "_blank";
+            container.appendChild(link);
+
+            const copyButton = document.createElement('button');
+            copyButton.innerText = 'Copy';
+            copyButton.classList.add('copy-button');
+            copyButton.onclick = () => {
+                navigator.clipboard.writeText(link.href)
+                    .then(() => alert('Copied to clipboard!'))
+                    .catch(err => alert('Failed to copy text: ' + err));
+            };
+            container.appendChild(copyButton);
+
+            return container;
+        }
+
+        function extractData(data) {
+            if (typeof data === 'object') {
+                if (data.stringValue !== undefined) return data.stringValue;
+                if (data.intValue !== undefined) return data.intValue;
+                if (data.boolValue !== undefined) return data.boolValue;
+                if (data.payload && data.payload.fields) {
+                    return '[Nested Payload]';
+                }
+                return JSON.stringify(data);
+            }
+            return data;
+        }
+    </script>
+</body>
+</html>
